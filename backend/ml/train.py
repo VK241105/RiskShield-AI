@@ -1,281 +1,575 @@
+"""
+RiskShield AI
+Synthetic Return & Refund Risk Dataset Generator
+
+IMPORTANT:
+This dataset is SYNTHETIC and is intended for prototype/demo purposes.
+
+The target is generated from observable customer and order behavior.
+No target value is used as an input feature.
+
+The goal is to create a realistic but learnable return-risk problem
+for demonstrating an AI risk-management system.
+"""
+
 from pathlib import Path
 
-import joblib
+import numpy as np
 import pandas as pd
 
-from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import (
-    classification_report,
-    confusion_matrix,
-    f1_score,
-    precision_score,
-    recall_score,
-    roc_auc_score,
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+RANDOM_SEED = 42
+N_SAMPLES = 15000
+
+TARGET_RISK_RATE = 0.22
+
+OUTPUT_FILE = (
+    Path(__file__).resolve().parents[2]
+    / "data"
+    / "return_risk_dataset.csv"
 )
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import OneHotEncoder
 
 
-RANDOM_STATE = 42
+# ============================================================
+# RANDOM GENERATOR
+# ============================================================
+
+rng = np.random.default_rng(RANDOM_SEED)
 
 
-def main():
+# ============================================================
+# CUSTOMER PROFILE
+# ============================================================
 
-    # Find project folder
-    project_root = Path(__file__).resolve().parents[2]
+customer_age = np.clip(
+    rng.normal(32, 10, N_SAMPLES),
+    18,
+    70
+).round().astype(int)
 
-    # Dataset location
-    dataset_path = project_root / "data" / "return_risk_dataset.csv"
 
-    # Model folder
-    model_directory = project_root / "models"
-    model_directory.mkdir(
-        parents=True,
-        exist_ok=True,
+customer_account_age_days = np.clip(
+    rng.gamma(3.0, 180, N_SAMPLES),
+    15,
+    2500
+).round().astype(int)
+
+
+previous_orders = np.clip(
+    rng.poisson(12, N_SAMPLES),
+    0,
+    80
+).astype(int)
+
+
+# ============================================================
+# CUSTOMER RETURN / REFUND HISTORY
+# ============================================================
+
+# Historical return behavior
+previous_returns = np.minimum(
+    previous_orders,
+    rng.binomial(
+        previous_orders,
+        0.13
     )
+).astype(int)
 
-    print("Loading dataset...")
 
-    df = pd.read_csv(dataset_path)
+# Historical refund behavior
+previous_refunds = np.minimum(
+    previous_returns + 3,
+    rng.binomial(
+        np.maximum(previous_orders, 1),
+        0.08
+    )
+).astype(int)
 
-    print(f"Dataset shape: {df.shape}")
 
-    # Target
-    target_column = "return_risk"
+# ============================================================
+# RECENT CUSTOMER ACTIVITY
+# ============================================================
 
-    X = df.drop(columns=[target_column])
-    y = df[target_column]
+orders_last_30_days = np.clip(
+    rng.poisson(
+        2.5 + np.minimum(previous_orders, 15) * 0.08,
+        N_SAMPLES
+    ),
+    0,
+    20
+).astype(int)
 
-    # Categorical columns
-    categorical_features = [
-        "payment_method",
-        "product_category",
+
+returns_last_90_days = np.clip(
+    rng.poisson(
+        0.7 + previous_returns * 0.10,
+        N_SAMPLES
+    ),
+    0,
+    12
+).astype(int)
+
+
+# ============================================================
+# ORDER INFORMATION
+# ============================================================
+
+order_amount = np.clip(
+    rng.lognormal(
+        mean=7.0,
+        sigma=0.65,
+        size=N_SAMPLES
+    ),
+    150,
+    50000
+).round(2)
+
+
+delivery_days = np.clip(
+    rng.normal(4.5, 1.8, N_SAMPLES),
+    1,
+    14
+).round(1)
+
+
+discount_percentage = np.clip(
+    rng.beta(2.0, 5.0, N_SAMPLES) * 70,
+    0,
+    70
+).round(2)
+
+
+# ============================================================
+# CATEGORICAL INFORMATION
+# ============================================================
+
+payment_method = rng.choice(
+    [
+        "UPI",
+        "Credit Card",
+        "Debit Card",
+        "Cash on Delivery",
+        "Wallet"
+    ],
+    size=N_SAMPLES,
+    p=[
+        0.35,
+        0.25,
+        0.20,
+        0.15,
+        0.05
     ]
+)
 
-    # Numerical columns
-    numerical_features = [
-        column
-        for column in X.columns
-        if column not in categorical_features
+
+product_category = rng.choice(
+    [
+        "Fashion",
+        "Grocery",
+        "Accessories",
+        "Electronics",
+        "Home"
+    ],
+    size=N_SAMPLES,
+    p=[
+        0.28,
+        0.18,
+        0.18,
+        0.20,
+        0.16
     ]
+)
 
-    # Preprocessing
-    preprocessor = ColumnTransformer(
-        transformers=[
-            (
-                "categorical",
-                OneHotEncoder(
-                    handle_unknown="ignore",
-                    sparse_output=False,
-                ),
-                categorical_features,
-            ),
-            (
-                "numerical",
-                "passthrough",
-                numerical_features,
-            ),
-        ]
+
+# ============================================================
+# BEHAVIORAL FEATURES
+# ============================================================
+
+return_rate = (
+    (previous_returns + returns_last_90_days)
+    /
+    np.maximum(
+        previous_orders + orders_last_30_days,
+        1
     )
+)
 
-    # --------------------------------
-    # Split data
-    # --------------------------------
+return_rate = np.clip(
+    return_rate,
+    0,
+    1
+)
 
-    print("\nSplitting dataset...")
 
-    # 70% training, 30% temporary
-    X_train, X_temp, y_train, y_temp = train_test_split(
-        X,
-        y,
-        test_size=0.30,
-        random_state=RANDOM_STATE,
-        stratify=y,
+refund_rate = (
+    previous_refunds
+    /
+    np.maximum(
+        previous_orders,
+        1
     )
+)
 
-    # Temporary data -> 15% validation + 15% test
-    X_validation, X_test, y_validation, y_test = train_test_split(
-        X_temp,
-        y_temp,
-        test_size=0.50,
-        random_state=RANDOM_STATE,
-        stratify=y_temp,
+refund_rate = np.clip(
+    refund_rate,
+    0,
+    1
+)
+
+
+# ============================================================
+# FEATURE ENGINEERING
+# ============================================================
+
+recent_return_ratio = (
+    returns_last_90_days
+    /
+    np.maximum(
+        orders_last_30_days + 2,
+        2
     )
+)
 
-    print(f"Training samples:   {len(X_train):,}")
-    print(f"Validation samples: {len(X_validation):,}")
-    print(f"Test samples:       {len(X_test):,}")
+recent_return_ratio = np.clip(
+    recent_return_ratio,
+    0,
+    1
+)
 
-    # --------------------------------
-    # Preprocessing
-    # --------------------------------
 
-    print("\nProcessing data...")
-
-    X_train_processed = preprocessor.fit_transform(
-        X_train
+refund_return_ratio = (
+    previous_refunds
+    /
+    np.maximum(
+        previous_returns,
+        1
     )
+)
 
-    X_validation_processed = preprocessor.transform(
-        X_validation
+refund_return_ratio = np.clip(
+    refund_return_ratio,
+    0,
+    1
+)
+
+
+customer_activity_rate = (
+    previous_orders
+    /
+    np.maximum(
+        customer_account_age_days / 30,
+        1
     )
+)
 
-    X_test_processed = preprocessor.transform(
-        X_test
+
+average_order_value = (
+    order_amount
+    /
+    np.maximum(
+        previous_orders + 1,
+        1
     )
+)
 
-    # --------------------------------
-    # Train Random Forest
-    # --------------------------------
 
-    print("\nTraining Random Forest AI model...")
+# ============================================================
+# LATENT RISK SCORE
+#
+# IMPORTANT:
+# This score is ONLY used to generate the synthetic target.
+# It is NOT included in the model features.
+# ============================================================
 
-    model = RandomForestClassifier(
-        n_estimators=300,
-        max_depth=12,
-        min_samples_leaf=3,
-        class_weight="balanced",
-        random_state=RANDOM_STATE,
-        n_jobs=-1,
-    )
+risk_score = (
 
-    model.fit(
-        X_train_processed,
-        y_train,
-    )
+    # Strongest signal:
+    3.0 * return_rate
 
-    # --------------------------------
-    # Validation
-    # --------------------------------
+    + 2.2 * refund_rate
 
-    print("\nEvaluating validation set...")
+    + 1.7 * recent_return_ratio
 
-    validation_probabilities = model.predict_proba(
-        X_validation_processed
-    )[:, 1]
+    + 1.2 * refund_return_ratio
 
-    validation_predictions = (
-        validation_probabilities >= 0.50
-    ).astype(int)
+    + 0.55 * np.log1p(orders_last_30_days)
 
-    validation_f1 = f1_score(
-        y_validation,
-        validation_predictions,
-        zero_division=0,
-    )
+    + 0.35 * np.log1p(previous_orders)
 
-    print(
-        f"Validation F1 Score: {validation_f1:.4f}"
-    )
+    + 0.30 * np.log1p(order_amount / 1000)
 
-    # --------------------------------
-    # Held-out TEST SET
-    # --------------------------------
+    + 0.45 * (discount_percentage / 100)
 
-    print("\nEvaluating HELD-OUT TEST SET...")
+    + 0.35 * (delivery_days / 10)
 
-    test_probabilities = model.predict_proba(
-        X_test_processed
-    )[:, 1]
+    + 0.15 * customer_activity_rate
 
-    test_predictions = (
-        test_probabilities >= 0.50
-    ).astype(int)
+)
 
-    precision = precision_score(
-        y_test,
-        test_predictions,
-        zero_division=0,
-    )
 
-    recall = recall_score(
-        y_test,
-        test_predictions,
-        zero_division=0,
-    )
+# ============================================================
+# CATEGORY / PAYMENT RISK EFFECTS
+# ============================================================
 
-    f1 = f1_score(
-        y_test,
-        test_predictions,
-        zero_division=0,
-    )
+risk_score += np.where(
+    product_category == "Fashion",
+    0.30,
+    0
+)
 
-    roc_auc = roc_auc_score(
-        y_test,
-        test_probabilities,
-    )
+risk_score += np.where(
+    product_category == "Electronics",
+    0.22,
+    0
+)
 
-    # --------------------------------
-    # Results
-    # --------------------------------
+risk_score += np.where(
+    payment_method == "Cash on Delivery",
+    0.35,
+    0
+)
 
-    print("\n" + "=" * 60)
-    print("RISKSHIELD AI — MODEL PERFORMANCE")
-    print("=" * 60)
+risk_score += np.where(
+    payment_method == "Wallet",
+    0.15,
+    0
+)
 
-    print(f"Precision : {precision:.4f}")
-    print(f"Recall    : {recall:.4f}")
-    print(f"F1 Score  : {f1:.4f}")
-    print(f"ROC-AUC   : {roc_auc:.4f}")
 
-    print("\nClassification Report:")
+# ============================================================
+# SMALL REALISTIC NOISE
+# ============================================================
 
-    print(
-        classification_report(
-            y_test,
-            test_predictions,
-            target_names=[
-                "Normal",
-                "Risky",
-            ],
-            zero_division=0,
+risk_score += rng.normal(
+    0,
+    0.18,
+    N_SAMPLES
+)
+
+
+# ============================================================
+# CREATE TARGET
+# ============================================================
+
+# Convert risk score into a probability.
+risk_probability = 1 / (
+    1 + np.exp(
+        -(
+            2.5 * (
+                risk_score
+                - np.median(risk_score)
+            )
         )
     )
+)
 
-    print("Confusion Matrix:")
 
-    matrix = confusion_matrix(
-        y_test,
-        test_predictions,
+# Normalize to approximately the desired prevalence.
+risk_probability = (
+    risk_probability
+    / np.mean(risk_probability)
+    * TARGET_RISK_RATE
+)
+
+risk_probability = np.clip(
+    risk_probability,
+    0.01,
+    0.95
+)
+
+
+return_risk = (
+    rng.random(N_SAMPLES)
+    < risk_probability
+).astype(int)
+
+
+# ============================================================
+# CALIBRATE PREVALENCE
+# ============================================================
+
+# Keep approximately TARGET_RISK_RATE risky records.
+target_count = int(
+    N_SAMPLES * TARGET_RISK_RATE
+)
+
+current_count = int(
+    return_risk.sum()
+)
+
+
+if current_count > target_count:
+
+    risky_indices = np.where(
+        return_risk == 1
+    )[0]
+
+    keep_indices = rng.choice(
+        risky_indices,
+        size=target_count,
+        replace=False
     )
 
-    print(matrix)
+    return_risk[:] = 0
 
-    # --------------------------------
-    # Save model
-    # --------------------------------
+    return_risk[keep_indices] = 1
 
-    model_path = (
-        model_directory
-        / "return_risk_model.joblib"
+
+elif current_count < target_count:
+
+    normal_indices = np.where(
+        return_risk == 0
+    )[0]
+
+    add_count = target_count - current_count
+
+    add_indices = rng.choice(
+        normal_indices,
+        size=add_count,
+        replace=False
     )
 
-    preprocessor_path = (
-        model_directory
-        / "preprocessor.joblib"
+    return_risk[add_indices] = 1
+
+
+# ============================================================
+# FINAL DATAFRAME
+# ============================================================
+
+df = pd.DataFrame({
+
+    "customer_age": customer_age,
+
+    "order_amount": order_amount,
+
+    "previous_orders": previous_orders,
+
+    "previous_returns": previous_returns,
+
+    "previous_refunds": previous_refunds,
+
+    "delivery_days": delivery_days,
+
+    "discount_percentage": discount_percentage,
+
+    "customer_account_age_days":
+        customer_account_age_days,
+
+    "orders_last_30_days":
+        orders_last_30_days,
+
+    "returns_last_90_days":
+        returns_last_90_days,
+
+    "return_rate":
+        return_rate.round(4),
+
+    "refund_rate":
+        refund_rate.round(4),
+
+    "recent_return_ratio":
+        recent_return_ratio.round(4),
+
+    "refund_return_ratio":
+        refund_return_ratio.round(4),
+
+    "customer_activity_rate":
+        customer_activity_rate.round(4),
+
+    "average_order_value":
+        average_order_value.round(2),
+
+    "payment_method":
+        payment_method,
+
+    "product_category":
+        product_category,
+
+    "return_risk":
+        return_risk
+})
+
+
+# ============================================================
+# SHUFFLE
+# ============================================================
+
+df = df.sample(
+    frac=1,
+    random_state=RANDOM_SEED
+).reset_index(drop=True)
+
+
+# ============================================================
+# SAVE
+# ============================================================
+
+OUTPUT_FILE.parent.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+df.to_csv(
+    OUTPUT_FILE,
+    index=False
+)
+
+
+# ============================================================
+# DATASET REPORT
+# ============================================================
+
+print("=" * 70)
+print("RISKSHIELD AI — DATASET GENERATION")
+print("=" * 70)
+
+print(
+    f"\nDataset saved to:\n{OUTPUT_FILE}"
+)
+
+print(
+    f"\nDataset shape: {df.shape}"
+)
+
+print("\nClass distribution:")
+
+print(
+    df["return_risk"]
+    .value_counts()
+    .sort_index()
+)
+
+print("\nClass percentages:")
+
+print(
+    df["return_risk"]
+    .value_counts(
+        normalize=True
     )
+    .sort_index()
+    .mul(100)
+    .round(2)
+)
 
-    joblib.dump(
-        model,
-        model_path,
-    )
+print("\nMissing values:")
 
-    joblib.dump(
-        preprocessor,
-        preprocessor_path,
-    )
+print(
+    df.isnull()
+    .sum()
+    .sum()
+)
 
-    print("\n" + "=" * 60)
-    print("MODEL SAVED SUCCESSFULLY")
-    print("=" * 60)
+print("\nDuplicate rows:")
 
-    print(f"Model: {model_path}")
-    print(f"Preprocessor: {preprocessor_path}")
+print(
+    df.duplicated()
+    .sum()
+)
 
-    print("=" * 60)
-
-
-if __name__ == "__main__":
-    main()
-    
+print("\nRiskShield dataset generation completed.")
+print("IMPORTANT: This is SYNTHETIC prototype data.")
+print("=" * 70)

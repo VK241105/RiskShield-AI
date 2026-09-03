@@ -1,4 +1,18 @@
-import os
+"""
+RiskShield AI
+Final Production Model
+
+The production model is trained using:
+Training + Validation data = 85%
+
+The held-out test set is NOT used for training.
+
+The production threshold was selected separately
+using validation data only.
+"""
+
+from pathlib import Path
+
 import joblib
 import pandas as pd
 
@@ -10,37 +24,13 @@ from sklearn.ensemble import RandomForestClassifier
 
 
 # ============================================================
-# PATHS
+# CONFIGURATION
 # ============================================================
 
-BASE_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "../..")
-)
-
-DATA_FILE = os.path.join(
-    BASE_DIR, "data", "return_risk_dataset.csv"
-)
-
-MODEL_DIR = os.path.join(
-    BASE_DIR, "models"
-)
-
-MODEL_FILE = os.path.join(
-    MODEL_DIR, "riskshield_model.joblib"
-)
-
-THRESHOLD_FILE = os.path.join(
-    MODEL_DIR, "risk_threshold.joblib"
-)
-
-
-# ============================================================
-# SETTINGS
-# ============================================================
+RANDOM_STATE = 42
 
 TARGET = "return_risk"
 
-RANDOM_STATE = 42
 
 CATEGORICAL_FEATURES = [
     "payment_method",
@@ -49,44 +39,55 @@ CATEGORICAL_FEATURES = [
 
 
 # ============================================================
+# PATHS
+# ============================================================
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+DATA_FILE = (
+    PROJECT_ROOT
+    / "data"
+    / "return_risk_dataset.csv"
+)
+
+MODEL_DIR = (
+    PROJECT_ROOT
+    / "models"
+)
+
+MODEL_FILE = (
+    MODEL_DIR
+    / "riskshield_model.joblib"
+)
+
+THRESHOLD_FILE = (
+    MODEL_DIR
+    / "risk_threshold.joblib"
+)
+
+
+# ============================================================
 # LOAD DATA
 # ============================================================
 
 print("=" * 70)
-print("RISKSHIELD AI — SAVING FINAL MODEL")
+print("RISKSHIELD AI — FINAL PRODUCTION MODEL")
 print("=" * 70)
 
-print("\nLoading dataset...")
+df = pd.read_csv(
+    DATA_FILE
+)
 
-df = pd.read_csv(DATA_FILE)
+X = df.drop(
+    columns=[TARGET]
+)
 
-print(f"Dataset shape: {df.shape}")
-
-
-# ============================================================
-# PREPARE FEATURES
-# ============================================================
-
-X = df.drop(columns=[TARGET])
 y = df[TARGET]
 
-NUMERICAL_FEATURES = [
-    col for col in X.columns
-    if col not in CATEGORICAL_FEATURES
-]
-
-print("\nFeatures:")
-print(f"Categorical: {CATEGORICAL_FEATURES}")
-print(f"Numerical  : {NUMERICAL_FEATURES}")
-
 
 # ============================================================
-# SAME DATA SPLIT USED DURING FINAL EVALUATION
+# SPLIT
 # ============================================================
-
-# First split:
-# 70% Train
-# 30% Temporary
 
 X_train, X_temp, y_train, y_temp = train_test_split(
     X,
@@ -96,22 +97,69 @@ X_train, X_temp, y_train, y_temp = train_test_split(
     random_state=RANDOM_STATE
 )
 
-# Second split:
-# 15% Validation
-# 15% Test
-
-X_val, X_test, y_val, y_test = train_test_split(
-    X_temp,
-    y_temp,
-    test_size=0.50,
-    stratify=y_temp,
-    random_state=RANDOM_STATE
+X_validation, X_test, y_validation, y_test = (
+    train_test_split(
+        X_temp,
+        y_temp,
+        test_size=0.50,
+        stratify=y_temp,
+        random_state=RANDOM_STATE
+    )
 )
 
-print("\nData split:")
-print(f"Training   : {len(X_train)}")
-print(f"Validation : {len(X_val)}")
-print(f"Test       : {len(X_test)}")
+
+# ============================================================
+# COMBINE TRAIN + VALIDATION
+# ============================================================
+
+X_production = pd.concat(
+    [
+        X_train,
+        X_validation
+    ],
+    axis=0
+).reset_index(drop=True)
+
+
+y_production = pd.concat(
+    [
+        y_train,
+        y_validation
+    ],
+    axis=0
+).reset_index(drop=True)
+
+
+print("\nProduction training data:")
+
+print(
+    f"Samples: "
+    f"{len(X_production):,}"
+)
+
+print(
+    "Approximately 85% of total dataset."
+)
+
+print(
+    f"\nHeld-out test samples: "
+    f"{len(X_test):,}"
+)
+
+print(
+    "The test set is NOT used for training."
+)
+
+
+# ============================================================
+# NUMERICAL FEATURES
+# ============================================================
+
+NUMERICAL_FEATURES = [
+    column
+    for column in X.columns
+    if column not in CATEGORICAL_FEATURES
+]
 
 
 # ============================================================
@@ -120,14 +168,18 @@ print(f"Test       : {len(X_test)}")
 
 preprocessor = ColumnTransformer(
     transformers=[
+
         (
             "categorical",
+
             OneHotEncoder(
                 handle_unknown="ignore",
                 sparse_output=False
             ),
+
             CATEGORICAL_FEATURES
         ),
+
         (
             "numerical",
             "passthrough",
@@ -138,122 +190,203 @@ preprocessor = ColumnTransformer(
 
 
 # ============================================================
-# FINAL RANDOM FOREST MODEL
+# FINAL MODEL
 # ============================================================
 
 model = RandomForestClassifier(
-    n_estimators=300,
-    max_depth=12,
-    min_samples_leaf=3,
-    class_weight="balanced",
+
+    n_estimators=700,
+
+    max_depth=16,
+
+    min_samples_split=5,
+
+    min_samples_leaf=2,
+
+    max_features="sqrt",
+
+    class_weight=None,
+
     random_state=RANDOM_STATE,
+
     n_jobs=-1
 )
 
 
 # ============================================================
-# COMPLETE PIPELINE
+# PIPELINE
 # ============================================================
 
 pipeline = Pipeline(
     steps=[
-        ("preprocessor", preprocessor),
-        ("model", model)
+
+        (
+            "preprocessor",
+            preprocessor
+        ),
+
+        (
+            "model",
+            model
+        )
     ]
 )
 
 
 # ============================================================
-# TRAIN MODEL
+# TRAIN
 # ============================================================
 
-print("\nTraining final model...")
+print("\nTraining production model...")
 
-pipeline.fit(X_train, y_train)
+pipeline.fit(
+    X_production,
+    y_production
+)
 
-print("Model training completed.")
-
-
-# ============================================================
-# CREATE MODEL DIRECTORY
-# ============================================================
-
-os.makedirs(MODEL_DIR, exist_ok=True)
+print(
+    "Production model training completed."
+)
 
 
 # ============================================================
-# SAVE COMPLETE PIPELINE
+# SAVE
 # ============================================================
+
+MODEL_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
 
 joblib.dump(
     pipeline,
     MODEL_FILE
 )
 
-print("\nFinal model saved successfully:")
-print(MODEL_FILE)
+
+print("\nProduction model saved:")
+
+print(
+    MODEL_FILE
+)
 
 
 # ============================================================
 # LOAD THRESHOLD
 # ============================================================
 
-if os.path.exists(THRESHOLD_FILE):
+if THRESHOLD_FILE.exists():
 
-    threshold_data = joblib.load(THRESHOLD_FILE)
+    threshold_data = joblib.load(
+        THRESHOLD_FILE
+    )
 
-    print("\nProduction threshold information:")
+    if isinstance(
+        threshold_data,
+        dict
+    ):
 
-    if isinstance(threshold_data, dict):
         threshold = threshold_data.get(
             "threshold",
-            threshold_data.get("production_threshold", None)
+            0.50
         )
 
-        print(f"Production threshold: {threshold}")
-
     else:
-        print(f"Production threshold: {threshold_data}")
+
+        threshold = float(
+            threshold_data
+        )
 
 else:
-    print("\nWARNING: risk_threshold.joblib was not found.")
+
+    threshold = 0.50
+
+    print(
+        "\nWARNING: "
+        "risk_threshold.joblib not found."
+    )
+
+
+print(
+    f"\nProduction threshold: "
+    f"{threshold:.2f}"
+)
 
 
 # ============================================================
-# VERIFY SAVED MODEL
+# VERIFY
 # ============================================================
 
 print("\nVerifying saved model...")
 
-loaded_pipeline = joblib.load(MODEL_FILE)
+loaded_model = joblib.load(
+    MODEL_FILE
+)
+
 
 sample = X_test.iloc[[0]]
 
-prediction = loaded_pipeline.predict(sample)[0]
+sample_probability = (
+    loaded_model
+    .predict_proba(sample)[0][1]
+)
 
-probability = loaded_pipeline.predict_proba(sample)[0][1]
 
-print(f"Sample prediction : {prediction}")
-print(f"Sample risk probability: {probability:.4f}")
+sample_prediction = int(
+    sample_probability
+    >= threshold
+)
+
+
+print(
+    f"Sample probability: "
+    f"{sample_probability:.4f}"
+)
+
+print(
+    f"Sample prediction: "
+    f"{sample_prediction}"
+)
 
 
 # ============================================================
-# FINAL INFORMATION
+# MODEL INFORMATION
 # ============================================================
 
 print("\n" + "=" * 70)
-print("FINAL MODEL READY")
+print("PRODUCTION MODEL READY")
 print("=" * 70)
 
-print(f"Model file:")
-print(MODEL_FILE)
+print(
+    "\nPipeline contains:"
+)
 
-print("\nThe saved pipeline contains:")
-print("1. Categorical preprocessing")
-print("2. Numerical preprocessing")
-print("3. Random Forest model")
-print("4. Complete prediction pipeline")
+print(
+    "1. One-hot encoding"
+)
 
-print("\nThe model can now be loaded directly by FastAPI.")
+print(
+    "2. Numerical feature handling"
+)
+
+print(
+    "3. Random Forest"
+)
+
+print(
+    "4. Complete prediction pipeline"
+)
+
+print(
+    "\nTraining data: 85%"
+)
+
+print(
+    "Held-out test data: 15%"
+)
+
+print(
+    "\nThe saved model can be loaded directly by FastAPI."
+)
 
 print("=" * 70)

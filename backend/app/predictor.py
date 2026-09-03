@@ -1,21 +1,23 @@
 import os
+
 import joblib
 import pandas as pd
 
 
-# ------------------------------------------------------------
-# PATHS
-# ------------------------------------------------------------
-
 BASE_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "../..")
+    os.path.join(
+        os.path.dirname(__file__),
+        "../.."
+    )
 )
+
 
 MODEL_PATH = os.path.join(
     BASE_DIR,
     "models",
     "riskshield_model.joblib"
 )
+
 
 THRESHOLD_PATH = os.path.join(
     BASE_DIR,
@@ -24,76 +26,232 @@ THRESHOLD_PATH = os.path.join(
 )
 
 
-# ------------------------------------------------------------
-# LOAD MODEL
-# ------------------------------------------------------------
-
 print("Loading RiskShield AI model...")
 
-model = joblib.load(MODEL_PATH)
+model = joblib.load(
+    MODEL_PATH
+)
 
 print("Model loaded successfully.")
 
 
-# ------------------------------------------------------------
-# LOAD PRODUCTION THRESHOLD
-# ------------------------------------------------------------
+threshold_data = joblib.load(
+    THRESHOLD_PATH
+)
 
-threshold_data = joblib.load(THRESHOLD_PATH)
 
-if isinstance(threshold_data, dict):
-    THRESHOLD = threshold_data.get(
-        "threshold",
-        threshold_data.get("production_threshold", 0.43)
+if isinstance(
+    threshold_data,
+    dict
+):
+
+    THRESHOLD = float(
+        threshold_data.get(
+            "threshold",
+            0.50
+        )
     )
+
 else:
-    THRESHOLD = float(threshold_data)
 
-print(f"Production threshold: {THRESHOLD}")
+    THRESHOLD = float(
+        threshold_data
+    )
 
 
-# ------------------------------------------------------------
-# PREDICTION FUNCTION
-# ------------------------------------------------------------
+print(
+    f"Production threshold: "
+    f"{THRESHOLD}"
+)
 
-def predict_return_risk(order_data: dict):
 
-    # Convert incoming data into DataFrame
-    input_df = pd.DataFrame([order_data])
+def add_engineered_features(
+    order_data: dict
+):
 
-    # Get probability of risky return
-    risk_probability = model.predict_proba(input_df)[0][1]
+    data = order_data.copy()
 
-    # Apply locked production threshold
-    prediction = int(risk_probability >= THRESHOLD)
+    previous_orders = max(
+        data["previous_orders"],
+        1
+    )
 
-    # Convert probability to score 0-100
-    risk_score = round(risk_probability * 100, 2)
+    previous_returns = max(
+        data["previous_returns"],
+        0
+    )
 
-    # Risk level
+    previous_refunds = max(
+        data["previous_refunds"],
+        0
+    )
+
+    orders_last_30_days = max(
+        data["orders_last_30_days"],
+        0
+    )
+
+    returns_last_90_days = max(
+        data["returns_last_90_days"],
+        0
+    )
+
+    account_age = max(
+        data["customer_account_age_days"],
+        1
+    )
+
+
+    data["return_rate"] = min(
+        (
+            previous_returns
+            +
+            returns_last_90_days
+        )
+        /
+        max(
+            previous_orders
+            +
+            orders_last_30_days,
+            1
+        ),
+        1.0
+    )
+
+
+    data["refund_rate"] = min(
+        previous_refunds
+        /
+        previous_orders,
+        1.0
+    )
+
+
+    data["recent_return_ratio"] = min(
+        returns_last_90_days
+        /
+        max(
+            orders_last_30_days + 2,
+            2
+        ),
+        1.0
+    )
+
+
+    data["refund_return_ratio"] = min(
+        previous_refunds
+        /
+        max(
+            previous_returns,
+            1
+        ),
+        1.0
+    )
+
+
+    data["customer_activity_rate"] = (
+        previous_orders
+        /
+        max(
+            account_age / 30,
+            1
+        )
+    )
+
+
+    data["average_order_value"] = (
+        data["order_amount"]
+        /
+        max(
+            previous_orders + 1,
+            1
+        )
+    )
+
+
+    return data
+
+
+def predict_return_risk(
+    order_data: dict
+):
+
+    enriched_data = (
+        add_engineered_features(
+            order_data
+        )
+    )
+
+
+    input_df = pd.DataFrame(
+        [enriched_data]
+    )
+
+
+    risk_probability = (
+        model
+        .predict_proba(
+            input_df
+        )[0][1]
+    )
+
+
+    prediction = int(
+        risk_probability
+        >= THRESHOLD
+    )
+
+
+    risk_score = round(
+        float(risk_probability * 100),
+        2
+    )
+
+
     if risk_score < 30:
+
         risk_level = "LOW"
 
+        recommendation = (
+            "Normal processing"
+        )
+
     elif risk_score < 60:
+
         risk_level = "MEDIUM"
 
+        recommendation = (
+            "Additional verification recommended"
+        )
+
     else:
+
         risk_level = "HIGH"
 
-    # Recommendation
-    if risk_level == "LOW":
-        recommendation = "Normal processing"
+        recommendation = (
+            "Manual review recommended"
+        )
 
-    elif risk_level == "MEDIUM":
-        recommendation = "Additional verification recommended"
-
-    else:
-        recommendation = "Manual review recommended"
 
     return {
-        "prediction": "Risky" if prediction == 1 else "Normal",
-        "risk_probability": round(float(risk_probability), 4),
-        "risk_score": risk_score,
-        "risk_level": risk_level,
-        "recommendation": recommendation
+
+        "prediction":
+            "Risky"
+            if prediction == 1
+            else "Normal",
+
+        "risk_probability":
+            round(
+                float(risk_probability),
+                4
+            ),
+
+        "risk_score":
+            risk_score,
+
+        "risk_level":
+            risk_level,
+
+        "recommendation":
+            recommendation
     }

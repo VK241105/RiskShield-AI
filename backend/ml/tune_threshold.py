@@ -3,38 +3,35 @@ RiskShield AI
 Threshold Tuning and Business Cost Evaluation
 
 Methodology:
-1. Train Random Forest using training data.
-2. Use validation data to evaluate different thresholds.
-3. Keep only thresholds with precision >= 50%.
-4. Among those thresholds, select the one with minimum business cost.
-5. Lock the selected threshold.
-6. Evaluate the locked threshold on the untouched test set.
 
-IMPORTANT:
-The test set is NOT used for threshold selection.
+1. Train model on training data.
+2. Generate validation probabilities.
+3. Search thresholds on validation data.
+4. Require minimum precision.
+5. Select threshold with minimum business cost.
+6. Lock threshold.
+7. Evaluate locked threshold on test set.
+8. Save threshold metadata.
 
-This is a defense-only risk management system.
+The test set is NEVER used to select the threshold.
 """
 
-import os
+from pathlib import Path
+
 import joblib
 import numpy as np
 import pandas as pd
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.ensemble import RandomForestClassifier
 
 from sklearn.metrics import (
+    accuracy_score,
     precision_score,
     recall_score,
     f1_score,
     roc_auc_score,
     average_precision_score,
-    confusion_matrix,
-    classification_report
+    confusion_matrix
 )
 
 
@@ -42,267 +39,162 @@ from sklearn.metrics import (
 # CONFIGURATION
 # ============================================================
 
-RANDOM_SEED = 42
+RANDOM_STATE = 42
 
-# Minimum acceptable precision
-MIN_PRECISION = 0.50
+MIN_PRECISION = 0.60
 
-# Prototype business-cost assumptions
 FALSE_POSITIVE_COST = 100
+
 FALSE_NEGATIVE_COST = 1000
 
 
 # ============================================================
-# PROJECT PATHS
+# PATHS
 # ============================================================
 
-BASE_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+DATA_FILE = (
+    PROJECT_ROOT
+    / "data"
+    / "return_risk_dataset.csv"
 )
 
-DATA_FILE = os.path.join(
-    BASE_DIR,
-    "data",
-    "return_risk_dataset.csv"
+MODEL_FILE = (
+    PROJECT_ROOT
+    / "models"
+    / "riskshield_model.joblib"
 )
 
-MODEL_DIR = os.path.join(
-    BASE_DIR,
-    "models"
+THRESHOLD_FILE = (
+    PROJECT_ROOT
+    / "models"
+    / "risk_threshold.joblib"
 )
 
-THRESHOLD_FILE = os.path.join(
-    MODEL_DIR,
-    "risk_threshold.joblib"
-)
-
-THRESHOLD_CSV = os.path.join(
-    MODEL_DIR,
-    "threshold_analysis.csv"
+THRESHOLD_CSV = (
+    PROJECT_ROOT
+    / "models"
+    / "threshold_analysis.csv"
 )
 
 
 # ============================================================
-# START
+# LOAD DATA
 # ============================================================
 
 print("=" * 70)
 print("RISKSHIELD AI — THRESHOLD TUNING")
 print("=" * 70)
 
-print("\nLoading dataset...")
-
-df = pd.read_csv(DATA_FILE)
-
-print(f"Dataset shape: {df.shape}")
-
-
-# ============================================================
-# FEATURES AND TARGET
-# ============================================================
-
-TARGET = "return_risk"
-
-X = df.drop(
-    columns=[TARGET]
+df = pd.read_csv(
+    DATA_FILE
 )
 
-y = df[TARGET]
+X = df.drop(
+    columns=["return_risk"]
+)
 
-
-categorical_features = [
-    "payment_method",
-    "product_category"
-]
-
-numerical_features = [
-    column
-    for column in X.columns
-    if column not in categorical_features
-]
+y = df["return_risk"]
 
 
 # ============================================================
-# DATA SPLIT
+# SAME SPLIT
 # ============================================================
-
-print("\nSplitting dataset...")
-
-# 70% Training
-# 15% Validation
-# 15% Test
 
 X_train, X_temp, y_train, y_temp = train_test_split(
     X,
     y,
     test_size=0.30,
     stratify=y,
-    random_state=RANDOM_SEED
+    random_state=RANDOM_STATE
 )
 
-X_val, X_test, y_val, y_test = train_test_split(
-    X_temp,
-    y_temp,
-    test_size=0.50,
-    stratify=y_temp,
-    random_state=RANDOM_SEED
-)
-
-
-print(f"Training samples:   {len(X_train):,}")
-print(f"Validation samples: {len(X_val):,}")
-print(f"Test samples:       {len(X_test):,}")
-
-
-# ============================================================
-# PREPROCESSING
-# ============================================================
-
-print("\nPreparing preprocessing pipeline...")
-
-preprocessor = ColumnTransformer(
-    transformers=[
-
-        (
-            "categorical",
-
-            OneHotEncoder(
-                handle_unknown="ignore",
-                sparse_output=False
-            ),
-
-            categorical_features
-        ),
-
-        (
-            "numerical",
-            "passthrough",
-            numerical_features
-        )
-    ]
+X_validation, X_test, y_validation, y_test = (
+    train_test_split(
+        X_temp,
+        y_temp,
+        test_size=0.50,
+        stratify=y_temp,
+        random_state=RANDOM_STATE
+    )
 )
 
 
 # ============================================================
-# RANDOM FOREST MODEL
+# LOAD MODEL
 # ============================================================
 
-print("\nTraining Random Forest...")
-
-model = RandomForestClassifier(
-    n_estimators=300,
-    max_depth=12,
-    min_samples_leaf=3,
-    class_weight="balanced",
-    random_state=RANDOM_SEED,
-    n_jobs=-1
+model = joblib.load(
+    MODEL_FILE
 )
-
-
-pipeline = Pipeline(
-    steps=[
-        (
-            "preprocessor",
-            preprocessor
-        ),
-
-        (
-            "model",
-            model
-        )
-    ]
-)
-
-
-# Train ONLY on training data
-pipeline.fit(
-    X_train,
-    y_train
-)
-
-print("Model training completed.")
 
 
 # ============================================================
 # VALIDATION PROBABILITIES
 # ============================================================
 
-print("\nCalculating validation probabilities...")
-
-val_probabilities = pipeline.predict_proba(
-    X_val
-)[:, 1]
+validation_probabilities = (
+    model.predict_proba(
+        X_validation
+    )[:, 1]
+)
 
 
 # ============================================================
-# THRESHOLD ANALYSIS
+# THRESHOLD SEARCH
 # ============================================================
 
-print("\n" + "=" * 70)
-print("VALIDATION THRESHOLD ANALYSIS")
-print("=" * 70)
-
-print(
-    f"\nMinimum required precision: "
-    f"{MIN_PRECISION:.0%}"
-)
-
-print(
-    f"False Positive cost: ₹{FALSE_POSITIVE_COST}"
-)
-
-print(
-    f"False Negative cost: ₹{FALSE_NEGATIVE_COST}"
-)
-
-
-# Test thresholds from 0.10 to 0.90
 thresholds = np.arange(
-    0.10,
-    0.91,
+    0.20,
+    0.81,
     0.01
 )
 
 
-threshold_results = []
+results = []
 
 
 for threshold in thresholds:
 
-    # Convert probabilities into predictions
-    val_predictions = (
-        val_probabilities >= threshold
+    predictions = (
+        validation_probabilities
+        >= threshold
     ).astype(int)
 
 
-    # Classification metrics
+    accuracy = accuracy_score(
+        y_validation,
+        predictions
+    )
+
     precision = precision_score(
-        y_val,
-        val_predictions,
+        y_validation,
+        predictions,
         zero_division=0
     )
 
     recall = recall_score(
-        y_val,
-        val_predictions,
+        y_validation,
+        predictions,
         zero_division=0
     )
 
     f1 = f1_score(
-        y_val,
-        val_predictions,
+        y_validation,
+        predictions,
         zero_division=0
     )
 
 
-    # Confusion matrix
-    tn, fp, fn, tp = confusion_matrix(
-        y_val,
-        val_predictions
-    ).ravel()
+    tn, fp, fn, tp = (
+        confusion_matrix(
+            y_validation,
+            predictions
+        ).ravel()
+    )
 
 
-    # Business cost
     business_cost = (
         fp * FALSE_POSITIVE_COST
         +
@@ -310,272 +202,174 @@ for threshold in thresholds:
     )
 
 
-    threshold_results.append({
+    results.append({
 
-        "threshold": round(
-            float(threshold),
-            2
-        ),
+        "threshold":
+            round(float(threshold), 2),
 
-        "precision": precision,
+        "accuracy":
+            accuracy,
 
-        "recall": recall,
+        "precision":
+            precision,
 
-        "f1": f1,
+        "recall":
+            recall,
 
-        "fp": int(fp),
+        "f1":
+            f1,
 
-        "fn": int(fn),
+        "tn":
+            int(tn),
 
-        "tp": int(tp),
+        "fp":
+            int(fp),
 
-        "tn": int(tn),
+        "fn":
+            int(fn),
 
-        "business_cost": int(
-            business_cost
-        ),
+        "tp":
+            int(tp),
 
-        "meets_precision_requirement": (
+        "business_cost":
+            int(business_cost),
+
+        "meets_precision":
             precision >= MIN_PRECISION
-        )
     })
 
 
 threshold_df = pd.DataFrame(
-    threshold_results
+    results
 )
 
 
 # ============================================================
-# BEST F1 THRESHOLD
+# VALID THRESHOLDS
 # ============================================================
 
-best_f1_row = threshold_df.loc[
-    threshold_df["f1"].idxmax()
-]
-
-best_f1_threshold = float(
-    best_f1_row["threshold"]
-)
-
-
-print("\n" + "-" * 70)
-
-print("BEST THRESHOLD BASED ON VALIDATION F1")
-
-print("-" * 70)
-
-print(
-    f"Threshold     : "
-    f"{best_f1_threshold:.2f}"
-)
-
-print(
-    f"Precision     : "
-    f"{best_f1_row['precision']:.4f}"
-)
-
-print(
-    f"Recall        : "
-    f"{best_f1_row['recall']:.4f}"
-)
-
-print(
-    f"F1 Score      : "
-    f"{best_f1_row['f1']:.4f}"
-)
-
-print(
-    f"False Positives: "
-    f"{int(best_f1_row['fp'])}"
-)
-
-print(
-    f"False Negatives: "
-    f"{int(best_f1_row['fn'])}"
-)
-
-print(
-    f"Business Cost : "
-    f"₹{int(best_f1_row['business_cost']):,}"
-)
-
-
-# ============================================================
-# APPLY PRECISION CONSTRAINT
-# ============================================================
-
-valid_thresholds = threshold_df[
-    threshold_df[
-        "precision"
-    ] >= MIN_PRECISION
+valid = threshold_df[
+    threshold_df["meets_precision"]
 ].copy()
 
 
-print("\n" + "-" * 70)
-
-print("PRECISION-CONSTRAINED THRESHOLD SEARCH")
-
-print("-" * 70)
+print("\n" + "=" * 70)
+print("VALIDATION THRESHOLD ANALYSIS")
+print("=" * 70)
 
 print(
-    f"Required precision: "
+    f"\nMinimum precision: "
     f"{MIN_PRECISION:.0%}"
 )
 
 print(
-    f"Valid thresholds found: "
-    f"{len(valid_thresholds)}"
+    f"Valid thresholds: "
+    f"{len(valid)}"
 )
 
 
-if valid_thresholds.empty:
+# ============================================================
+# SELECT THRESHOLD
+# ============================================================
+
+if len(valid) == 0:
 
     print(
-        "\nWARNING: No threshold satisfies "
-        f"the minimum precision requirement of "
-        f"{MIN_PRECISION:.0%}."
+        "\nNo threshold satisfied "
+        "the precision requirement."
     )
 
     print(
-        "Falling back to the threshold "
-        "with the best validation F1."
+        "Selecting threshold with "
+        "best validation F1."
     )
 
-    production_threshold = best_f1_threshold
-
-    selected_row = best_f1_row
+    selected = threshold_df.loc[
+        threshold_df["f1"].idxmax()
+    ]
 
     selection_method = (
-        "Best validation F1 because "
-        "no threshold satisfied the "
-        "minimum precision requirement"
+        "Best validation F1"
     )
 
 else:
 
-    # Among thresholds satisfying
-    # minimum precision,
-    # choose the one with minimum business cost.
+    # Primary objective:
+    # minimum business cost
 
-    selected_row = valid_thresholds.loc[
-        valid_thresholds[
-            "business_cost"
-        ].idxmin()
-    ]
+    # Tie-break:
+    # higher F1
 
-    production_threshold = float(
-        selected_row["threshold"]
+    # Final tie-break:
+    # higher precision
+
+    valid = valid.sort_values(
+        by=[
+            "business_cost",
+            "f1",
+            "precision"
+        ],
+        ascending=[
+            True,
+            False,
+            False
+        ]
     )
+
+    selected = valid.iloc[0]
 
     selection_method = (
-        "Minimum business cost on validation "
-        f"subject to precision >= {MIN_PRECISION:.0%}"
+        "Minimum validation business cost "
+        f"with precision >= {MIN_PRECISION:.0%}"
     )
+
+
+production_threshold = float(
+    selected["threshold"]
+)
 
 
 # ============================================================
-# SELECTED PRODUCTION THRESHOLD
+# LOCKED THRESHOLD
 # ============================================================
 
 print("\n" + "=" * 70)
-
-print("SELECTED PRODUCTION THRESHOLD")
-
+print("LOCKED PRODUCTION THRESHOLD")
 print("=" * 70)
 
 print(
-    f"\nProduction Threshold : "
+    f"\nThreshold : "
     f"{production_threshold:.2f}"
 )
 
 print(
-    f"Precision            : "
-    f"{selected_row['precision']:.4f}"
+    f"Precision : "
+    f"{selected['precision']:.4f}"
 )
 
 print(
-    f"Recall               : "
-    f"{selected_row['recall']:.4f}"
+    f"Recall    : "
+    f"{selected['recall']:.4f}"
 )
 
 print(
-    f"F1 Score             : "
-    f"{selected_row['f1']:.4f}"
+    f"F1        : "
+    f"{selected['f1']:.4f}"
 )
 
 print(
-    f"False Positives      : "
-    f"{int(selected_row['fp'])}"
+    f"Accuracy  : "
+    f"{selected['accuracy']:.4f}"
 )
 
 print(
-    f"False Negatives      : "
-    f"{int(selected_row['fn'])}"
+    f"Business Cost: "
+    f"₹{int(selected['business_cost']):,}"
 )
 
 print(
-    f"Business Cost        : "
-    f"₹{int(selected_row['business_cost']):,}"
-)
-
-print(
-    f"\nSelection Method:"
-)
-
-print(
-    selection_method
-)
-
-
-# ============================================================
-# VALIDATION PERFORMANCE AT LOCKED THRESHOLD
-# ============================================================
-
-val_final_predictions = (
-    val_probabilities >= production_threshold
-).astype(int)
-
-
-val_precision = precision_score(
-    y_val,
-    val_final_predictions,
-    zero_division=0
-)
-
-val_recall = recall_score(
-    y_val,
-    val_final_predictions,
-    zero_division=0
-)
-
-val_f1 = f1_score(
-    y_val,
-    val_final_predictions,
-    zero_division=0
-)
-
-val_roc_auc = roc_auc_score(
-    y_val,
-    val_probabilities
-)
-
-val_pr_auc = average_precision_score(
-    y_val,
-    val_probabilities
-)
-
-
-val_tn, val_fp, val_fn, val_tp = confusion_matrix(
-    y_val,
-    val_final_predictions
-).ravel()
-
-
-val_cost = (
-    val_fp * FALSE_POSITIVE_COST
-    +
-    val_fn * FALSE_NEGATIVE_COST
+    f"\nSelection method:\n"
+    f"{selection_method}"
 )
 
 
@@ -583,40 +377,22 @@ val_cost = (
 # FINAL TEST EVALUATION
 # ============================================================
 
-print("\n" + "=" * 70)
-
-print("FINAL HELD-OUT TEST EVALUATION")
-
-print("=" * 70)
-
-print("\nIMPORTANT:")
-
-print(
-    "The test set was NOT used "
-    "for threshold selection."
+test_probabilities = (
+    model.predict_proba(
+        X_test
+    )[:, 1]
 )
 
-print(
-    f"Locked production threshold: "
-    f"{production_threshold:.2f}"
-)
-
-
-# Predict probabilities on untouched test set
-test_probabilities = pipeline.predict_proba(
-    X_test
-)[:, 1]
-
-
-# Apply locked threshold
 test_predictions = (
-    test_probabilities >= production_threshold
+    test_probabilities
+    >= production_threshold
 ).astype(int)
 
 
-# ============================================================
-# TEST METRICS
-# ============================================================
+test_accuracy = accuracy_score(
+    y_test,
+    test_predictions
+)
 
 test_precision = precision_score(
     y_test,
@@ -647,14 +423,14 @@ test_pr_auc = average_precision_score(
 )
 
 
-# Confusion matrix
-test_tn, test_fp, test_fn, test_tp = confusion_matrix(
-    y_test,
-    test_predictions
-).ravel()
+test_tn, test_fp, test_fn, test_tp = (
+    confusion_matrix(
+        y_test,
+        test_predictions
+    ).ravel()
+)
 
 
-# Business cost
 test_cost = (
     test_fp * FALSE_POSITIVE_COST
     +
@@ -663,18 +439,21 @@ test_cost = (
 
 
 # ============================================================
-# FINAL PERFORMANCE
+# TEST RESULTS
 # ============================================================
 
 print("\n" + "=" * 70)
-
-print("RISKSHIELD AI — FINAL MODEL PERFORMANCE")
-
+print("FINAL HELD-OUT TEST")
 print("=" * 70)
 
 print(
-    f"Threshold : "
+    f"\nLocked threshold: "
     f"{production_threshold:.2f}"
+)
+
+print(
+    f"Accuracy  : "
+    f"{test_accuracy:.4f}"
 )
 
 print(
@@ -703,213 +482,104 @@ print(
 )
 
 
-# ============================================================
-# CLASSIFICATION REPORT
-# ============================================================
-
-print("\nClassification Report:")
+print("\nConfusion Matrix:")
 
 print(
-    classification_report(
-        y_test,
-        test_predictions,
-        target_names=[
-            "Normal",
-            "Risky"
-        ],
-        zero_division=0
-    )
-)
-
-
-# ============================================================
-# CONFUSION MATRIX
-# ============================================================
-
-print("Confusion Matrix:")
-
-print(
-    np.array([
+    [
         [test_tn, test_fp],
         [test_fn, test_tp]
-    ])
+    ]
 )
 
 
-# ============================================================
-# BUSINESS IMPACT
-# ============================================================
-
-print("\n" + "=" * 70)
-
-print("BUSINESS IMPACT")
-
-print("=" * 70)
-
 print(
-    f"False Positives : "
-    f"{test_fp}"
-)
-
-print(
-    f"False Negatives : "
-    f"{test_fn}"
-)
-
-print(
-    f"True Positives  : "
-    f"{test_tp}"
-)
-
-print(
-    f"True Negatives  : "
-    f"{test_tn}"
-)
-
-print(
-    f"FP Cost/order   : "
-    f"₹{FALSE_POSITIVE_COST}"
-)
-
-print(
-    f"FN Cost/order   : "
-    f"₹{FALSE_NEGATIVE_COST}"
-)
-
-print(
-    f"Estimated Test Error Cost: "
+    f"\nEstimated test error cost: "
     f"₹{test_cost:,}"
 )
 
 
 # ============================================================
-# SAVE RESULTS
+# SAVE METADATA
 # ============================================================
 
-os.makedirs(
-    MODEL_DIR,
+MODEL_DIR = PROJECT_ROOT / "models"
+
+MODEL_DIR.mkdir(
+    parents=True,
     exist_ok=True
 )
 
 
-# ============================================================
-# SAVE THRESHOLD METADATA
-# ============================================================
-
 metadata = {
 
-    "model_type": "Random Forest",
+    "model_type":
+        "Best validation model",
 
-    "threshold": production_threshold,
+    "threshold":
+        production_threshold,
 
-    "threshold_selection_method": selection_method,
+    "threshold_selection_method":
+        selection_method,
 
-    "minimum_precision_requirement": MIN_PRECISION,
+    "minimum_precision_requirement":
+        MIN_PRECISION,
 
-    "random_seed": RANDOM_SEED,
+    "random_seed":
+        RANDOM_STATE,
 
-    "validation_metrics": {
-
-        "precision": float(
-            val_precision
-        ),
-
-        "recall": float(
-            val_recall
-        ),
-
-        "f1": float(
-            val_f1
-        ),
-
-        "roc_auc": float(
-            val_roc_auc
-        ),
-
-        "pr_auc": float(
-            val_pr_auc
-        ),
-
-        "true_negatives": int(
-            val_tn
-        ),
-
-        "false_positives": int(
-            val_fp
-        ),
-
-        "false_negatives": int(
-            val_fn
-        ),
-
-        "true_positives": int(
-            val_tp
-        ),
-
-        "business_cost": int(
-            val_cost
-        )
-    },
+    "validation_metrics":
+        selected.to_dict(),
 
     "test_metrics": {
 
-        "precision": float(
-            test_precision
-        ),
+        "accuracy":
+            float(test_accuracy),
 
-        "recall": float(
-            test_recall
-        ),
+        "precision":
+            float(test_precision),
 
-        "f1": float(
-            test_f1
-        ),
+        "recall":
+            float(test_recall),
 
-        "roc_auc": float(
-            test_roc_auc
-        ),
+        "f1":
+            float(test_f1),
 
-        "pr_auc": float(
-            test_pr_auc
-        ),
+        "roc_auc":
+            float(test_roc_auc),
 
-        "true_negatives": int(
-            test_tn
-        ),
+        "pr_auc":
+            float(test_pr_auc),
 
-        "false_positives": int(
-            test_fp
-        ),
+        "tn":
+            int(test_tn),
 
-        "false_negatives": int(
-            test_fn
-        ),
+        "fp":
+            int(test_fp),
 
-        "true_positives": int(
-            test_tp
-        ),
+        "fn":
+            int(test_fn),
 
-        "business_cost": int(
-            test_cost
-        )
+        "tp":
+            int(test_tp),
+
+        "business_cost":
+            int(test_cost)
     },
 
     "business_cost_assumptions": {
 
-        "false_positive_cost": (
-            FALSE_POSITIVE_COST
-        ),
+        "false_positive_cost":
+            FALSE_POSITIVE_COST,
 
-        "false_negative_cost": (
+        "false_negative_cost":
             FALSE_NEGATIVE_COST
-        )
     },
 
-    "data_type": (
-        "Synthetic prototype data"
-    ),
+    "data_type":
+        "Synthetic prototype data",
 
-    "test_set_used_for_threshold_selection": False
+    "test_set_used_for_threshold_selection":
+        False
 }
 
 
@@ -919,55 +589,17 @@ joblib.dump(
 )
 
 
-# ============================================================
-# SAVE THRESHOLD ANALYSIS CSV
-# ============================================================
-
 threshold_df.to_csv(
     THRESHOLD_CSV,
     index=False
 )
 
 
-# ============================================================
-# COMPLETION
-# ============================================================
+print("\nThreshold metadata saved:")
+print(THRESHOLD_FILE)
 
-print("\n" + "=" * 70)
+print("\nThreshold analysis saved:")
+print(THRESHOLD_CSV)
 
-print("THRESHOLD TUNING COMPLETED")
-
-print("=" * 70)
-
-print(
-    f"\nProduction threshold: "
-    f"{production_threshold:.2f}"
-)
-
-print(
-    f"\nThreshold metadata saved to:"
-)
-
-print(
-    THRESHOLD_FILE
-)
-
-print(
-    f"\nThreshold analysis saved to:"
-)
-
-print(
-    THRESHOLD_CSV
-)
-
-print(
-    "\nThe test set was evaluated "
-    "only after the threshold was locked."
-)
-
-print(
-    "\nThe threshold was selected using "
-    "validation data only."
-)
-
+print("\nThreshold tuning completed.")
 print("=" * 70)
