@@ -1,0 +1,4 @@
+Model,Val Precision,Val Recall,Val F1,Val ROC-AUC,Test Precision,Test Recall,Test F1,Test ROC-AUC,Test PR-AUC
+Logistic Regression,0.5107,0.6007,0.5521,0.7568,0.525,0.6252,0.5707,0.7632,0.6078
+Random Forest,0.5876,0.5306,0.5577,0.7506,0.5992,0.5712,0.5849,0.7582,0.6089
+XGBoost,0.5441,0.5432,0.5437,0.7471,0.5714,0.5838,0.5775,0.7528,0.6036
