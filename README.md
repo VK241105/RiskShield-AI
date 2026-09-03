@@ -770,24 +770,6 @@ FastAPI Backend
 Cloud Backend Platform
 ```
 
-After deployment, the frontend API URL should point to the deployed backend instead of:
-
-```text
-http://127.0.0.1:8000
-```
-
-For example, a frontend environment variable can be configured as:
-
-```text
-VITE_API_URL=https://your-backend-url
-```
-
-> Never commit API keys, passwords, credentials, or private environment variables to GitHub.
-
-Once deployment is complete, replace the **Public Demo** placeholder in this README with the actual deployed URL.
-
----
-
 ## GitHub
 
 The project repository is:
@@ -795,20 +777,6 @@ The project repository is:
 ```text
 https://github.com/VK241105/RiskShield-AI/
 ```
-
-When pushing the project to GitHub, make sure generated and sensitive files such as the following are excluded when appropriate:
-
-```text
-node_modules/
-dist/
-.venv/
-.env
-__pycache__/
-```
-
-The `.gitignore` file should be used to prevent these files from being committed accidentally.
-
----
 
 ## Project Goal
 
@@ -840,4 +808,4 @@ rather than automatic rejection or denial of legitimate customers.
 
 **Local Backend:** `http://127.0.0.1:8000/`
 
-**Public Demo:** To be added after deployment
+
