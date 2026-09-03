@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Navbar from "./components/Navbar";
 import Dashboard from "./pages/Dashboard";
 import RiskAnalysis from "./pages/RiskAnalysis";
+import { API_BASE_URL } from "./api";
 
 import "./App.css";
 
@@ -40,7 +41,7 @@ function AppLayout() {
   useEffect(() => {
     let mounted = true;
 
-    fetch("http://127.0.0.1:8000/health")
+    fetch(`${API_BASE_URL}/health`)
       .then((response) => {
         if (!response.ok) {
           throw new Error("Backend unavailable");

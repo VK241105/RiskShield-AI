@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { API_BASE_URL } from "../api";
 
 function Dashboard({
   setResult,
@@ -28,7 +29,7 @@ function Dashboard({
   const [selectedAssessment, setSelectedAssessment] = useState(null);
 
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/assessments")
+    fetch(`${API_BASE_URL}/assessments`)
       .then((response) => {
         if (!response.ok) {
           throw new Error("History unavailable");
@@ -132,7 +133,7 @@ function Dashboard({
 
   const clearHistory = () => {
     if (window.confirm("Clear all saved assessment history?")) {
-      fetch("http://127.0.0.1:8000/assessments", {
+      fetch(`${API_BASE_URL}/assessments`, {
         method: "DELETE"
       }).catch(() => {});
       setRecentAssessments([]);
@@ -140,7 +141,7 @@ function Dashboard({
   };
 
   const deleteAssessment = (assessmentId) => {
-    fetch(`http://127.0.0.1:8000/assessments/${assessmentId}`, {
+    fetch(`${API_BASE_URL}/assessments/${assessmentId}`, {
       method: "DELETE"
     }).catch(() => {});
     setRecentAssessments((previous) => previous.filter((item) => item.id !== assessmentId));
@@ -174,7 +175,7 @@ function Dashboard({
   };
 
   const updateReview = (assessmentId, reviewStatus, reviewerNote) => {
-    fetch(`http://127.0.0.1:8000/assessments/${assessmentId}/review`, {
+    fetch(`${API_BASE_URL}/assessments/${assessmentId}/review`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -240,7 +241,7 @@ function Dashboard({
       };
 
       const response = await fetch(
-        "http://127.0.0.1:8000/predict",
+        `${API_BASE_URL}/predict`,
         {
           method: "POST",
           headers: {
