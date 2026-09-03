@@ -1,263 +1,843 @@
 # RiskShield AI
 
-RiskShield AI is a defense-only return and refund risk-management system. It
-helps merchants identify potentially risky cases before avoidable losses occur,
-while keeping the final decision with an authorized human reviewer.
+## AI-Powered Return & Refund Risk Management System
 
-This is an independent fintech engineering prototype. It is not a payment
-processor or a copy of any payment company. The included model uses synthetic
-data, so the displayed metrics demonstrate the evaluation workflow and are not
-production performance claims.
+RiskShield AI is a defense-only AI risk management system designed to help e-commerce merchants identify potentially high-risk return/refund cases before they are processed.
+
+The system analyzes customer and order information, calculates a risk probability and risk score, classifies the case into a risk level, and provides a recommendation for further action.
+
+> **Important:** RiskShield AI is an independent engineering prototype developed for a hackathon. It is designed for defensive fraud/risk detection and does not automatically reject customers, deny refunds, or make final business decisions.
+
+---
 
 ## Demo
 
-Local demo URL: http://localhost:5173
+### Local Demo
 
-The local demo requires both services to be running. A public demo link cannot
-be created from localhost; the backend and frontend must be deployed to hosted
-services first. After deployment, set `VITE_API_URL` to the public backend URL
-before building the frontend.
+The application currently runs locally using the Vite development server.
+
+**Frontend:**
+
+```text
+http://localhost:5175/
+```
+
+**Backend API:**
+
+```text
+http://127.0.0.1:8000/
+```
+
+**Backend Health Check:**
+
+```text
+http://127.0.0.1:8000/health
+```
+
+> **Note:** `localhost` links are local development links and can only be accessed from the computer running the application.
+
+### Public Demo
+
+A public demo link will be added after deployment.
+
+---
+
+## GitHub Repository
+
+```text
+https://github.com/VK241105/RiskShield-AI/
+```
+
+---
+
+## Overview
+
+E-commerce businesses can face financial losses from suspicious return and refund activity. Manually checking every transaction can be time-consuming and may lead to inconsistent decisions.
+
+RiskShield AI provides an AI-assisted risk assessment workflow.
+
+The system:
+
+* Collects customer and order information
+* Calculates useful behavioral indicators
+* Uses a trained machine learning model to estimate risk
+* Generates a risk probability
+* Converts the probability into a 0–100 risk score
+* Classifies the case as **LOW**, **MEDIUM**, or **HIGH**
+* Provides an actionable recommendation
+* Supports human review of high-risk cases
+
+The goal is to help merchants **prioritize cases that require additional attention** while keeping the final decision with a human reviewer.
+
+---
+
+## Key Features
+
+### 1. Return/Refund Risk Prediction
+
+The system predicts whether a return/refund case should be considered potentially high risk.
+
+### 2. Risk Probability
+
+The machine learning model produces a probability representing the estimated risk.
+
+### 3. Risk Score
+
+The probability is converted into a simple score between:
+
+```text
+0 – 100
+```
+
+Higher scores indicate higher estimated risk.
+
+### 4. Risk Classification
+
+Risk is classified into three levels:
+
+| Risk Score | Risk Level |
+| ---------- | ---------- |
+| 0–29       | LOW        |
+| 30–59      | MEDIUM     |
+| 60–100     | HIGH       |
+
+### 5. Recommendation
+
+The system provides a recommendation based on the predicted risk:
+
+* **LOW:** Normal processing
+* **MEDIUM:** Additional verification recommended
+* **HIGH:** Manual review recommended
+
+### 6. Human-in-the-Loop
+
+RiskShield AI does not make the final business decision automatically.
+
+High-risk cases can be reviewed by a human decision-maker.
+
+### 7. React Dashboard
+
+The frontend provides a simple interface for entering customer/order information and viewing the resulting risk assessment.
+
+---
 
 ## Core Workflow
 
-1. Enter customer and order information.
-2. Select the account creation date; account age is calculated automatically.
-3. Submit the case to receive a risk probability, score, level, and recommendation.
-4. Review the saved case and full input data from Recent Assessments.
-5. Add a human-review note and mark the assessment reviewed.
-6. Delete one record, clear all records, or export the history as CSV.
+```text
+Customer / Order Information
+            ↓
+     Frontend Validation
+            ↓
+       FastAPI Backend
+            ↓
+   Feature Engineering
+            ↓
+   Random Forest Model
+            ↓
+     Risk Probability
+            ↓
+       Risk Score 0–100
+            ↓
+     Risk Classification
+            ↓
+       Recommendation
+            ↓
+      Human Review
+```
 
-## Architecture
+---
+
+## System Architecture
 
 ```text
-React/Vite dashboard -> FastAPI /predict -> Random Forest model
-                                    # RiskShield AI
+┌──────────────────────────────┐
+│       React Frontend         │
+│      Vite + React + CSS      │
+└──────────────┬───────────────┘
+               │
+               │ HTTP Request
+               ↓
+┌──────────────────────────────┐
+│       FastAPI Backend        │
+│        /predict API          │
+└──────────────┬───────────────┘
+               │
+               ↓
+┌──────────────────────────────┐
+│     Feature Engineering      │
+│ Return Rate                  │
+│ Refund Rate                  │
+│ Recent Return Ratio          │
+│ Customer Activity Rate       │
+│ Average Order Value          │
+└──────────────┬───────────────┘
+               │
+               ↓
+┌──────────────────────────────┐
+│     Random Forest Model      │
+│ riskshield_model.joblib      │
+└──────────────┬───────────────┘
+               │
+               ↓
+┌──────────────────────────────┐
+│       Risk Assessment        │
+│ Probability                  │
+│ Score                        │
+│ Risk Level                   │
+│ Recommendation               │
+└──────────────────────────────┘
+```
 
-                                    RiskShield AI is a defense-only return and refund risk-management system. It
-                                    helps a merchant identify potentially risky cases before avoidable losses occur
-                                    while keeping the final decision with an authorized human reviewer.
+---
 
-                                    This is an independent fintech engineering prototype. It is not a payment
-                                    processor and does not automatically reject customers or approve refunds. The
-                                    included model uses synthetic data, so its metrics demonstrate the evaluation
-                                    workflow and are not production performance claims.
+## Project Structure
 
-                                    ## What The System Does
+The current project structure is:
 
-                                    The application accepts customer and order signals, runs a trained machine
-                                    learning model, and returns:
+```text
+RiskShield-AI/
+│
+├── backend/
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── predictor.py
+│   │   └── schemas.py
+│   │
+│   └── ml/
+│       ├── generate_dataset.py
+│       ├── train.py
+│       ├── compare_models.py
+│       ├── tune_threshold.py
+│       ├── save_final_model.py
+│       └── evaluate.py
+│
+├── data/
+│   └── return_risk_dataset.csv
+│
+├── models/
+│   ├── riskshield_model.joblib
+│   └── risk_threshold.joblib
+│
+├── frontend/
+│   ├── public/
+│   │
+│   ├── src/
+│   │   ├── components/
+│   │   │   └── Navbar.jsx
+│   │   │
+│   │   ├── pages/
+│   │   │   ├── Dashboard.jsx
+│   │   │   └── RiskAnalysis.jsx
+│   │   │
+│   │   ├── api.js
+│   │   ├── App.css
+│   │   ├── App.jsx
+│   │   ├── index.css
+│   │   └── main.jsx
+│   │
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── vite.config.js
+│   └── index.html
+│
+├── .gitignore
+└── README.md
+```
 
-                                    - Risk probability
-                                    - Risk score from 0 to 100
-                                    - Low, Medium, or High risk level
-                                    - Normal processing, verification, or manual-review recommendation
-                                    - Persistent assessment history
-                                    - Human-review status and reviewer notes
+> `node_modules/` and production build files are not included in the repository structure because they are generated dependencies/build artifacts and should be ignored by Git.
 
-                                    ## End-to-End Sequence
+---
 
-                                    ```text
-                                    1. User opens the React dashboard
-                                        |
-                                    2. User enters customer, account, return, refund, and order data
-                                        |
-                                    3. Frontend validates values and calculates account age from creation date
-                                        |
-                                    4. Frontend sends POST /predict to FastAPI
-                                        |
-                                    5. Pydantic validates the request against OrderData
-                                        |
-                                    6. Predictor adds engineered behavior features
-                                        |
-                                    7. Random Forest model calculates risk probability
-                                        |
-                                    8. Locked threshold and score rules produce the risk result
-                                        |
-                                    9. Backend saves order data, result, and audit event in SQLite
-                                        |
-                                    10. Frontend navigates to Risk Analysis and displays the result
-                                        |
-                                    11. Reviewer can inspect, annotate, mark reviewed, export, or delete it
-                                    ```
+## File Responsibilities
 
-                                    ## Project Structure
+### Backend
 
-                                    ```text
-                                    RiskShield-AI/
-                                    |
-                                    |-- backend/
-                                    |   |-- app/
-                                    |   |   |-- main.py
-                                    |   |   |-- database.py
-                                    |   |   |-- predictor.py
-                                    |   |   |-- schemas.py
-                                    |   |
-                                    |   |-- ml/
-                                    |       |-- generate_dataset.py
-                                    |       |-- train.py
-                                    |       |-- compare_models.py
-                                    |       |-- tune_threshold.py
-                                    |       |-- save_final_model.py
-                                    |       |-- evaluate.py
-                                    |
-                                    |-- data/
-                                    |   |-- return_risk_dataset.csv
-                                    |   |-- riskshield.db                 # local runtime database, ignored by Git
-                                    |
-                                    |-- models/
-                                    |   |-- riskshield_model.joblib       # active prediction pipeline
-                                    |   |-- risk_threshold.joblib         # locked decision threshold
-                                    |
-                                    |-- frontend/
-                                    |   |-- index.html
-                                    |   |-- package.json
-                                    |   |-- package-lock.json
-                                    |   |-- vite.config.js
-                                    |   |-- .env.example
-                                    |   |-- src/
-                                    |       |-- main.jsx
-                                    |       |-- App.jsx
-                                    |       |-- api.js
-                                    |       |-- App.css
-                                    |       |-- index.css
-                                    |       |-- components/
-                                    |       |   |-- Navbar.jsx
-                                    |       |-- pages/
-                                    |           |-- Dashboard.jsx
-                                    |           |-- RiskAnalysis.jsx
-                                    |
-                                    |-- .gitignore
-                                    |-- README.md
-                                    ```
+#### `backend/app/main.py`
 
-                                    ## File Responsibilities
+Main FastAPI application.
 
-                                    ### Frontend
+Responsible for:
 
-                                    `frontend/src/main.jsx` is the browser entrypoint. It mounts the React app.
+* Starting the API server
+* Defining API endpoints
+* Receiving prediction requests
+* Returning risk assessment results
 
-                                    `frontend/src/App.jsx` owns routing, latest-result state, persistent fallback
-                                    history, and the live backend health indicator. It exposes only the two core
-                                    screens: Dashboard and Risk Analysis.
+#### `backend/app/predictor.py`
 
-                                    `frontend/src/api.js` contains the configurable backend URL. Local development
-                                    defaults to `http://127.0.0.1:8000`; hosted deployments use `VITE_API_URL`.
+Handles the machine learning prediction process.
 
-                                    `frontend/src/components/Navbar.jsx` provides the focused product navigation.
+Responsible for:
 
-                                    `frontend/src/pages/Dashboard.jsx` contains the assessment form, date-based
-                                    account-age calculation, client-side consistency checks, demo case loader,
-                                    assessment history, CSV export, deletion, and human-review modal.
+* Loading the trained model
+* Creating engineered features
+* Calculating risk probability
+* Applying the selected threshold
+* Generating risk level
+* Generating recommendation
 
-                                    `frontend/src/pages/RiskAnalysis.jsx` renders the latest prediction, score,
-                                    probability, recommendation, interpretation, and human-review reminder.
+#### `backend/app/schemas.py`
 
-                                    `frontend/src/App.css` contains the application layout and responsive design.
-                                    `frontend/src/index.css` contains the global reset and base browser styles.
+Defines the request and response data structures used by the FastAPI API.
 
-                                    ### Backend
+---
 
-                                    `backend/app/main.py` creates the FastAPI service, configures restricted CORS,
-                                    adds security headers, initializes the database, and defines the API routes.
+## Machine Learning
 
-                                    `backend/app/schemas.py` defines Pydantic request/response contracts. It checks
-                                    numeric ranges, required fields, review status, and reviewer-note length.
+RiskShield AI currently uses a **Random Forest classifier** for return/refund risk prediction.
 
-                                    `backend/app/predictor.py` loads the active model and threshold, computes
-                                    engineered features, generates probability and score, and maps the score to a
-                                    risk level and recommendation.
+### Input Features
 
-                                    `backend/app/database.py` owns SQLite connections, assessment persistence,
-                                    review updates, deletion, and append-only audit events.
+The model receives customer and order information including:
 
-                                    ### Machine Learning
+* Customer age
+* Order amount
+* Previous orders
+* Previous returns
+* Previous refunds
+* Delivery days
+* Discount percentage
+* Customer account age
+* Orders in the last 30 days
+* Returns in the last 90 days
+* Payment method
+* Product category
 
-                                    `backend/ml/generate_dataset.py` creates the synthetic prototype dataset.
+### Engineered Features
 
-                                    `backend/ml/train.py` trains a baseline model.
+Additional behavioral features are calculated from the input data:
 
-                                    `backend/ml/compare_models.py` compares candidate classifiers on validation and
-                                    test splits.
+* Return rate
+* Refund rate
+* Recent return ratio
+* Refund-to-return ratio
+* Customer activity rate
+* Average order value
 
-                                    `backend/ml/tune_threshold.py` selects a threshold using validation data and
-                                    business costs without using the held-out test set for selection.
+These features provide the model with additional information about customer ordering and return behavior.
 
-                                    `backend/ml/save_final_model.py` trains and saves the production pipeline.
+---
 
-                                    `backend/ml/evaluate.py` reports final held-out accuracy, precision, recall, F1,
-                                    ROC-AUC, PR-AUC, confusion matrix, and false-positive/false-negative cost.
+## Risk Calculation
 
-                                    ## Local Run
+The trained model generates a probability using `predict_proba`.
 
-                                    From the repository root, start the backend:
+The probability is converted into a risk score:
 
-                                    ```powershell
-                                    .\.venv\Scripts\Activate.ps1
-                                    uvicorn backend.app.main:app --reload
-                                    ```
+```text
+Risk Score = Risk Probability × 100
+```
 
-                                    In a second terminal, start the frontend:
+The system then classifies the score using the configured thresholds.
 
-                                    ```powershell
-                                    Set-Location frontend
-                                    npm install
-                                    npm run dev
-                                    ```
+```text
+Score < 30
+    ↓
+LOW RISK
 
-                                    Open http://localhost:5173.
+30 ≤ Score < 60
+    ↓
+MEDIUM RISK
 
-                                    ## API Routes
+Score ≥ 60
+    ↓
+HIGH RISK
+```
 
-                                    - `GET /`: API identity and running status
-                                    - `GET /health`: backend, model, and threshold readiness
-                                    - `POST /predict`: validate, predict, persist, and return an assessment
-                                    - `GET /assessments`: list saved assessments
-                                    - `PATCH /assessments/{id}/review`: save review status and note
-                                    - `DELETE /assessments/{id}`: delete one assessment and audit the action
-                                    - `DELETE /assessments`: clear all assessments and audit deletions
+The risk threshold is stored separately in:
 
-                                    ## Storage And Security
+```text
+models/risk_threshold.joblib
+```
 
-                                    Assessment data is stored locally in `data/riskshield.db`. Each assessment
-                                    contains the submitted model inputs, result, review status, reviewer note, and
-                                    creation timestamp. Audit events record assessment creation, review updates,
-                                    and deletion.
+This allows the selected threshold from the model evaluation process to be reused during prediction.
 
-                                    The database, virtual environment, build output, Node dependencies, and `.env`
-                                    files are ignored by Git. The API uses restricted configurable CORS and adds
-                                    basic security headers. This local SQLite setup is suitable for demonstration,
-                                    not sensitive production customer data.
+---
 
-                                    ## Evaluation
+## Machine Learning Pipeline
 
-                                    The current prototype is evaluated on a held-out test set. Its verified accuracy
-                                    is approximately 76.22% at the locked threshold. The system also reports
-                                    precision, recall, F1, ROC-AUC, PR-AUC, and error cost because accuracy alone can
-                                    hide missed risky cases and unnecessary customer friction.
+The ML workflow contains several stages:
 
-                                    ## Public Demo
+### 1. Dataset Generation
 
-                                    `localhost` is reachable only from the local computer. To give others a usable
-                                    link, deploy the backend and frontend to hosted services.
+```text
+backend/ml/generate_dataset.py
+```
 
-                                    For the frontend build, configure:
+Generates the dataset used for the prototype.
 
-                                    ```text
-                                    VITE_API_URL=https://your-public-backend.example.com
-                                    ```
+### 2. Model Training
 
-                                    For the backend, configure:
+```text
+backend/ml/train.py
+```
 
-                                    ```text
-                                    RISKSHIELD_ALLOWED_ORIGINS=https://your-public-frontend.example.com
-                                    ```
+Trains the machine learning model.
 
-                                    A real deployment also needs authentication, role-based access, HTTPS,
-                                    encrypted or managed database storage, backups, rate limiting, monitoring,
-                                    privacy review, and consented real labeled data.
+### 3. Model Comparison
 
-                                    ## Honest Project Positioning
+```text
+backend/ml/compare_models.py
+```
 
-                                    > RiskShield AI is a defense-only return and refund risk scorer that helps
-                                    > merchants identify potentially risky cases before avoidable losses occur,
-                                    > while keeping final decisions with authorized human reviewers.
+Used to compare candidate machine learning approaches.
+
+### 4. Threshold Tuning
+
+```text
+backend/ml/tune_threshold.py
+```
+
+Used to identify an appropriate decision threshold based on model evaluation.
+
+### 5. Final Model Saving
+
+```text
+backend/ml/save_final_model.py
+```
+
+Saves the final trained model for use by the backend.
+
+### 6. Model Evaluation
+
+```text
+backend/ml/evaluate.py
+```
+
+Evaluates the model on the available test data.
+
+---
+
+## API
+
+The backend is built using **FastAPI**.
+
+### Base URL
+
+```text
+http://127.0.0.1:8000
+```
+
+### Health Check
+
+```http
+GET /health
+```
+
+Used to check whether the backend is running.
+
+### Prediction
+
+```http
+POST /predict
+```
+
+The frontend sends customer and order information to this endpoint.
+
+### Example Request
+
+```json
+{
+  "customer_age": 28,
+  "order_amount": 2499,
+  "previous_orders": 12,
+  "previous_returns": 4,
+  "previous_refunds": 3,
+  "delivery_days": 4,
+  "discount_percentage": 15,
+  "customer_account_age_days": 420,
+  "orders_last_30_days": 3,
+  "returns_last_90_days": 2,
+  "payment_method": "Credit Card",
+  "product_category": "Electronics"
+}
+```
+
+### Example Response
+
+```json
+{
+  "prediction": 1,
+  "risk_probability": 0.72,
+  "risk_score": 72,
+  "risk_level": "HIGH",
+  "recommendation": "Manual review recommended"
+}
+```
+
+---
+
+## Technology Stack
+
+### Frontend
+
+* React.js
+* Vite
+* JavaScript
+* JSX
+* CSS
+* React Router
+
+### Backend
+
+* Python
+* FastAPI
+* Pydantic
+* Uvicorn
+
+### Machine Learning
+
+* scikit-learn
+* Random Forest
+* pandas
+* NumPy
+* Joblib
+
+### Data
+
+* CSV-based prototype dataset
+* Synthetic return/refund risk data
+
+---
+
+## Installation
+
+### Prerequisites
+
+Make sure the following are installed:
+
+* Python
+* Node.js
+* npm
+* Git
+
+---
+
+## Backend Setup
+
+Open a terminal in the project root.
+
+Create/activate the Python virtual environment if it already exists:
+
+### Windows PowerShell
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Install the backend dependencies required by the project.
+
+Then start the FastAPI server:
+
+```powershell
+uvicorn backend.app.main:app --reload
+```
+
+The backend should be available at:
+
+```text
+http://127.0.0.1:8000
+```
+
+Check:
+
+```text
+http://127.0.0.1:8000/health
+```
+
+---
+
+## Frontend Setup
+
+Open another terminal.
+
+Move into the frontend directory:
+
+```powershell
+cd frontend
+```
+
+Install dependencies:
+
+```powershell
+npm install
+```
+
+Start the Vite development server:
+
+```powershell
+npm run dev
+```
+
+The frontend will normally be available at:
+
+```text
+http://localhost:5175/
+```
+
+> Vite may use another available port if `5175` is already occupied. Always open the URL displayed in the terminal.
+
+---
+
+## Running the Complete Application
+
+You need **two terminals**.
+
+### Terminal 1 — Backend
+
+From the project root:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+uvicorn backend.app.main:app --reload
+```
+
+### Terminal 2 — Frontend
+
+```powershell
+cd frontend
+npm run dev
+```
+
+Then open the frontend URL shown by Vite.
+
+Currently:
+
+```text
+http://localhost:5175/
+```
+
+---
+
+## Production Build
+
+To create a production build of the frontend:
+
+```powershell
+cd frontend
+npm run build
+```
+
+The production files are generated inside:
+
+```text
+frontend/dist/
+```
+
+To preview the production build locally:
+
+```powershell
+npm run preview
+```
+
+---
+
+## Model Evaluation
+
+The project includes a model evaluation workflow using a held-out test set.
+
+The current prototype evaluation achieved approximately:
+
+```text
+Accuracy: 76.22%
+```
+
+at the selected/locked risk threshold.
+
+> These results are prototype evaluation results based on the project's dataset. They should not be interpreted as production fraud-detection performance.
+
+For a production system, evaluation should include additional metrics such as:
+
+* Precision
+* Recall
+* F1-score
+* ROC-AUC
+* Confusion matrix
+* False-positive rate
+* False-negative rate
+
+This is particularly important for risk systems because incorrectly flagging legitimate customers can create a poor customer experience.
+
+---
+
+## Dataset
+
+The current prototype uses a **synthetic dataset** for development and evaluation.
+
+The dataset is located at:
+
+```text
+data/return_risk_dataset.csv
+```
+
+Synthetic data is useful for demonstrating the engineering workflow without exposing real customer information.
+
+However, synthetic data cannot fully represent real-world customer behavior.
+
+A production system would require:
+
+* Real historical transaction data
+* Properly labeled outcomes
+* Privacy-compliant data collection
+* Bias and fairness evaluation
+* Continuous monitoring
+* Regular model validation
+
+---
+
+## Responsible Use
+
+RiskShield AI is designed as a **defensive risk-assistance system**.
+
+The system should be used to:
+
+* Identify potentially suspicious cases
+* Prioritize cases for review
+* Assist fraud/risk teams
+* Reduce manual screening effort
+* Provide consistent risk indicators
+
+The system should **not** be used as the sole basis for:
+
+* Automatically rejecting customers
+* Automatically denying legitimate refunds
+* Permanently blocking customers
+* Making decisions based on protected characteristics
+
+Final actions should remain subject to appropriate human review and business policies.
+
+---
+
+## Limitations
+
+This project is a hackathon/engineering prototype and has several limitations.
+
+### Synthetic Data
+
+The model is trained and evaluated using synthetic data, so its performance may differ significantly from performance on real-world data.
+
+### Limited Features
+
+Real-world return/refund risk may depend on many additional signals that are not included in the current prototype.
+
+### Model Generalization
+
+A model trained on one dataset may not perform equally well across different merchants, products, countries, or customer populations.
+
+### Human Review
+
+The system provides recommendations rather than replacing human decision-making.
+
+### Production Security
+
+Additional security, authentication, rate limiting, monitoring, logging, and production CORS configuration would be required before real-world deployment.
+
+---
+
+## Future Scope
+
+Potential improvements include:
+
+* Integration with real e-commerce transaction systems
+* More advanced machine learning models
+* Explainable AI for individual risk predictions
+* Real-time transaction monitoring
+* Anomaly detection
+* Behavioral sequence analysis
+* Model drift monitoring
+* Feedback-based model retraining
+* Multi-merchant risk adaptation
+* Advanced fraud pattern detection
+* Role-based access control
+* Production-grade authentication and security
+* More extensive fairness and bias testing
+
+---
+
+## Public Deployment
+
+The current application is designed for local development.
+
+For a public demo, the system can be deployed using:
+
+```text
+Frontend
+   ↓
+Vercel / Netlify / Similar Platform
+   ↓
+FastAPI Backend
+   ↓
+Cloud Backend Platform
+```
+
+After deployment, the frontend API URL should point to the deployed backend instead of:
+
+```text
+http://127.0.0.1:8000
+```
+
+For example, a frontend environment variable can be configured as:
+
+```text
+VITE_API_URL=https://your-backend-url
+```
+
+> Never commit API keys, passwords, credentials, or private environment variables to GitHub.
+
+Once deployment is complete, replace the **Public Demo** placeholder in this README with the actual deployed URL.
+
+---
+
+## GitHub
+
+The project repository is:
+
+```text
+https://github.com/VK241105/RiskShield-AI/
+```
+
+When pushing the project to GitHub, make sure generated and sensitive files such as the following are excluded when appropriate:
+
+```text
+node_modules/
+dist/
+.venv/
+.env
+__pycache__/
+```
+
+The `.gitignore` file should be used to prevent these files from being committed accidentally.
+
+---
+
+## Project Goal
+
+RiskShield AI demonstrates how machine learning can be integrated into an e-commerce risk-management workflow to identify potentially high-risk return/refund cases.
+
+The project focuses on:
+
+**Detection → Risk Scoring → Prioritization → Human Review**
+
+rather than automatic rejection or denial of legitimate customers.
+
+---
+
+## Status
+
+**Current Status:** Working prototype
+
+**Frontend:** React + Vite
+
+**Backend:** FastAPI
+
+**ML Model:** Random Forest
+
+**Data:** Synthetic prototype dataset
+
+**Risk Output:** Probability + Score + Risk Level + Recommendation
+
+**Local Frontend:** `http://localhost:5175/`
+
+**Local Backend:** `http://127.0.0.1:8000/`
+
+**Public Demo:** To be added after deployment
